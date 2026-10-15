@@ -1,0 +1,17 @@
+.stage-welcome { position:absolute; left:var(--gutter); top:130px; width:min(480px,44vw); z-index:2; }
+.stage-welcome h1 { margin:22px 0; font:500 clamp(42px,4.2vw,66px)/1.03 var(--font-display); letter-spacing:-.035em; }
+.stage-welcome h1 em { color:var(--terra); font-weight:400; }
+.dashboard-intro { max-width:410px; font-size:14px; line-height:1.8; color:var(--ink-soft); }
+.gym-dashboard > .stage-action { margin-top:24px; }
+.live-dot { width:6px; height:6px; border-radius:50%; background:var(--terra); box-shadow:0 0 0 4px var(--terra-soft); }
+.dashboard-metrics { display:grid; grid-template-columns:1fr 1fr 1.5fr; gap:12px; margin-top:32px; border-block:1px solid var(--line); padding:22px 0; }
+.dashboard-metrics strong { display:block; font-size:25px; line-height:1.2; font-weight:500; letter-spacing:-.04em; }
+.dashboard-metrics strong span { font-size:13px; letter-spacing:0; }
+.dashboard-metrics > div > span { display:block; margin-top:7px; font-size:10px; color:var(--ink-faint); }
+.dashboard-next { margin-top:24px; }
+.dashboard-next > a { display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); }
+.dashboard-item-icon { display:grid; place-items:center; width:38px; height:38px; border:1px solid var(--line); border-radius:10px; color:var(--terra); }
+.dashboard-next strong { display:block; font-size:13px; font-weight:500; }
+.dashboard-next small { display:block; margin-top:4px; font-size:10px; color:var(--ink-soft); }
+.dashboard-next > a > :last-child { margin-left:auto; color:var(--terra); }
+.stage-welcome-scene { width:330px; top:130px; }.stage-welcome-scene h1 { font-size:48px; }

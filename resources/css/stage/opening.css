@@ -1,0 +1,6 @@
+.stage[data-scene="opening"] .stage-character { right:11%; height:86%; }
+.opening-panel { position:absolute; z-index:2; top:23%; left:8%; width:min(560px,46%); }
+.opening-panel h1 { margin:24px 0; font:500 clamp(44px,5vw,76px)/1.03 var(--font-display); letter-spacing:-.04em; }.opening-panel h1 em { color:var(--terra); }
+.opening-tagline { max-width:390px; color:var(--ink-soft); font-size:14px; line-height:1.8; }
+.opening-links { display:grid; grid-template-columns:1fr 1fr; gap:0 24px; margin-top:28px; width:420px; max-width:100%; }.opening-links a { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 0; border-bottom:1px solid var(--line); color:var(--ink-soft); font-size:12px; }.opening-links a:hover { color:var(--terra); }
+.opening-enter { position:absolute; z-index:3; bottom:12%; left:8%; }.opening-button { display:inline-flex; align-items:center; gap:32px; padding:18px 24px; background:var(--terra); color:var(--on-accent); border-radius:10px; font-size:14px; font-weight:600; }.opening-empty { color:var(--ink-soft); }

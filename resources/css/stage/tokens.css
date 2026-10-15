@@ -1,0 +1,24 @@
+/* Charcoal / lime. Every stage colour is defined here. */
+.stage-page {
+ --paper:#171d21; --paper-soft:#20282c; --paper-deep:#101619;
+ --ink:#f2f5ee; --ink-soft:#b4bfb9; --ink-faint:#94a09a;
+ --line:#343e40; --line-strong:#4a5757;
+ --terra:#c4f568; --terra-deep:#d5ff90; --terra-soft:#2f3c25;
+ --leaf:#a9df5c; --sun:#e4c778; --alert:#ffb6a5; --alert-soft:#422c29; --alert-line:#785149;
+ --on-accent:#172015; --glass:rgb(16 22 25 / .9); --shade:rgb(5 12 13 / .55); --white:#fff;
+ --radius-card:18px; --radius-control:10px; --shadow-card:0 18px 60px rgb(0 0 0 / .25); --shadow-soft:0 6px 24px rgb(0 0 0 / .16);
+ --concierge-focus:50% 8%; --concierge-zoom:300%;
+ height:100dvh; overflow:hidden; background:var(--paper-deep); color:var(--ink); font-variant-emoji:text;
+}
+.stage { --ease-cine:cubic-bezier(.22,.8,.24,1); --header:92px; --gutter:32px; --board-h:76px; --drawer:410px; --panel-bottom:124px; --chat-composer-height:56px; position:relative; height:100dvh; overflow:hidden; isolation:isolate; }
+.stage:has(.stage-program) { --panel-bottom:124px; }
+.stage :focus-visible,.stage-page :focus-visible { outline:3px solid var(--terra); outline-offset:4px; }
+.stage button:disabled { cursor:wait; opacity:.55; }
+.stage-eyebrow { display:flex; align-items:center; gap:9px; font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:var(--terra); }
+.stage-noscript { position:absolute; inset:auto 16px 16px; z-index:20; background:var(--paper); padding:16px; }
+.stage-page [class*="text-stone-"],.stage-page [class*="text-amber-"],.stage-page [class*="text-emerald-"] { color:var(--ink-soft); }
+.stage-page [class*="bg-white"],.stage-page [class*="bg-stone-50"] { background:var(--paper-soft); }
+
+.stage-page [class*="bg-stone-100"] { background:var(--paper-soft); }
+.stage-page [class*="border-stone-"] { border-color:var(--line); }
+.stage-page [class*="bg-amber-"] { background:var(--terra-soft); color:var(--ink); }

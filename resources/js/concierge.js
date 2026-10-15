@@ -1,0 +1,984 @@
+/**
+ * AI Fitness Concierge chat panel. Vanilla JS, no framework: sends guest messages to
+ * the Laravel backend and renders both plain text and the structured
+ * ui_payload the AI's tools attach (program cards, training options, table
+ * availability, reservation confirmations, handover notices) as real DOM,
+ * not markdown-in-a-bubble.
+ */
+import { getJson, postJson } from './shared/api.js';
+import { renderChatText } from './shared/chat-text.js';
+import { escapeHtml } from './shared/dom.js';
+import { createSpeaker } from './shared/speech.js';
+
+function initConcierge() {
+    const root = document.getElementById('concierge-app');
+    const widget = document.querySelector('[data-chat-widget]');
+    if (!root || !widget) return;
+
+    const config = {
+        startUrl: root.dataset.startUrl,
+        messageUrl: root.dataset.messageUrl,
+        historyUrl: root.dataset.historyUrl,
+        speechUrl: root.dataset.speechUrl,
+        storageKey: root.dataset.storageKey,
+        locale: root.dataset.locale,
+        currency: root.dataset.currency,
+        homeUrl: root.dataset.homeUrl,
+        itemUrlTemplate: root.dataset.itemUrl,
+        staffUrl: root.dataset.staffUrl,
+        terms: JSON.parse(root.dataset.terms || '{}'),
+        labels: {
+            placeholder: root.dataset.labelPlaceholder,
+            send: root.dataset.labelSend,
+            open: root.dataset.labelOpen,
+            close: root.dataset.labelClose,
+            intro: root.dataset.labelIntro,
+            voiceStart: root.dataset.labelVoiceStart,
+            voiceStop: root.dataset.labelVoiceStop,
+            voiceListening: root.dataset.labelVoiceListening,
+            voiceDenied: root.dataset.labelVoiceDenied,
+            soldOut: root.dataset.labelSoldOut,
+            participants: root.dataset.labelParticipants,
+            availableSlots: root.dataset.labelAvailableSlots,
+            noAvailability: root.dataset.labelNoAvailability,
+            reservationReceived: root.dataset.labelReservationReceived,
+            reference: root.dataset.labelReference,
+            feeFree: root.dataset.labelFeeFree,
+            fee: root.dataset.labelFee,
+            thinking: root.dataset.labelThinking,
+            handedOver: root.dataset.labelHandedOver,
+            statusSent: root.dataset.labelStatusSent,
+            statusWaiting: root.dataset.labelStatusWaiting,
+            statusReplied: root.dataset.labelStatusReplied,
+            chatExpand: root.dataset.labelChatExpand,
+            chatCollapse: root.dataset.labelChatCollapse,
+            draftTitle: root.dataset.labelDraftTitle,
+            draftBody: root.dataset.labelDraftBody,
+            draftKeep: root.dataset.labelDraftKeep,
+            draftDiscard: root.dataset.labelDraftDiscard,
+            viewDetails: root.dataset.labelViewDetails,
+            itemDetailsQuestion: root.dataset.labelItemDetailsQuestion,
+            reserveTable: root.dataset.labelReserveTable,
+            reserveSlotQuestion: root.dataset.labelReserveSlotQuestion,
+            reserveThisSlotQuestion: root.dataset.labelReserveThisSlotQuestion,
+            reserveStartQuestion: root.dataset.labelReserveStartQuestion,
+            reservationPending: root.dataset.labelReservationPending,
+            sendWhatsapp: root.dataset.labelSendWhatsapp,
+            callGym: root.dataset.labelCallGym,
+            emailGym: root.dataset.labelEmailGym,
+            programHeading: root.dataset.labelProgramHeading,
+            staff: root.dataset.labelStaff,
+            error: root.dataset.labelError,
+            slow: root.dataset.labelSlow,
+            retry: root.dataset.labelRetry,
+        },
+    };
+
+    const messagesEl = root.querySelector('[data-messages]');
+    const formEl = root.querySelector('[data-chat-form]');
+    const inputEl = root.querySelector('[data-chat-input]');
+    const submitEl = root.querySelector('[data-chat-submit]');
+    const statusBanner = root.querySelector('[data-status-banner]');
+    const chatStatus = root.querySelector('[data-chat-status]');
+    const thinkingIndicator = root.querySelector('[data-thinking-indicator]');
+    const draftDialog = root.querySelector('[data-draft-dialog]');
+    const draftKeep = root.querySelector('[data-draft-keep]');
+    const draftDiscard = root.querySelector('[data-draft-discard]');
+    const chatLog = root.querySelector('#concierge-chat-log');
+    const closeButton = widget.querySelector('[data-chat-close]');
+    const launcher = widget.querySelector('[data-chat-launcher]');
+    const newChatButton = widget.querySelector('[data-chat-new]');
+    const expandButton = widget.querySelector('[data-chat-expand]');
+    const micButton = root.querySelector('[data-chat-mic]');
+
+    let recognition = null;
+    let ready = false;
+    let busy = false;
+    let handedOver = false;
+    let knownMessageCount = 0;
+    let pollTimer = null;
+    let isOpen = false;
+    let draftDialogOpen = false;
+
+    /** The concierge's voice; it follows the same sound toggle as the interface sounds. */
+    const speaker = createSpeaker({
+        url: config.speechUrl,
+        onChange: (speaking) => root.classList.toggle('is-voicing', speaking),
+    });
+
+    function speakReply(message) {
+        if (!config.speechUrl || !message.id || !message.content || !window.gymSound?.isEnabled()) return;
+
+        speaker.speak({ guest_token: localStorage.getItem(config.storageKey), message_id: message.id });
+    }
+
+    window.addEventListener('pagehide', () => speaker.stop());
+
+    function setChatStatus(text, tone = '') {
+        if (!chatStatus) return;
+
+        chatStatus.textContent = text || '';
+        chatStatus.className = `chat-status${text ? ` is-${tone}` : ''}`;
+        chatStatus.hidden = !text;
+    }
+
+    function showDraftDialog() {
+        if (!draftDialog) return;
+
+        draftDialogOpen = true;
+        draftDialog.hidden = false;
+        draftDialog.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => draftKeep?.focus());
+    }
+
+    function hideDraftDialog({ focusInput = false } = {}) {
+        if (!draftDialog) return;
+
+        draftDialogOpen = false;
+        draftDialog.hidden = true;
+        draftDialog.setAttribute('aria-hidden', 'true');
+        if (focusInput) inputEl.focus();
+    }
+
+    function syncPanelState() {
+        root.classList.toggle('is-open', isOpen);
+        root.dataset.chatState = isOpen ? 'open' : 'closed';
+        chatLog?.setAttribute('aria-hidden', String(!isOpen));
+        formEl?.setAttribute('aria-hidden', String(!isOpen));
+        launcher?.setAttribute('aria-expanded', String(isOpen));
+    }
+
+    function openPanel({ focus = false } = {}) {
+        isOpen = true;
+        syncPanelState();
+        scrollToBottom();
+
+        if (focus) {
+            requestAnimationFrame(() => inputEl.focus());
+        }
+    }
+
+    function finishClosePanel({ restoreFocus = true } = {}) {
+        isOpen = false;
+        speaker.stop();
+        stopListening({ send: false });
+        syncPanelState();
+        hideDraftDialog();
+        if (restoreFocus) launcher?.focus();
+    }
+
+    function closePanel({ confirmDraft = true, restoreFocus = true } = {}) {
+        if (confirmDraft && inputEl?.value.trim()) {
+            showDraftDialog();
+            return;
+        }
+
+        finishClosePanel({ restoreFocus });
+    }
+
+    closeButton?.addEventListener('click', () => closePanel());
+    launcher?.addEventListener('click', () => openPanel({ focus: true }));
+    draftKeep?.addEventListener('click', () => hideDraftDialog({ focusInput: true }));
+    draftDiscard?.addEventListener('click', () => {
+        inputEl.value = '';
+        finishClosePanel();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+
+        if (draftDialogOpen) {
+            hideDraftDialog({ focusInput: true });
+            return;
+        }
+
+        if (isOpen) closePanel();
+    });
+    syncPanelState();
+
+    const numberLocale = config.locale === 'ja' ? 'ja-JP' : config.locale === 'en' ? 'en-US' : 'id-ID';
+
+    function money(value) {
+        const n = Number(value) || 0;
+        return `${config.currency} ${new Intl.NumberFormat(numberLocale, { maximumFractionDigits: 0 }).format(n)}`;
+    }
+
+    function formatDate(iso) {
+        const [year, month, day] = String(iso).split('-').map(Number);
+        if (!year) return iso;
+        return new Intl.DateTimeFormat(numberLocale, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(year, month - 1, day));
+    }
+
+    /** Text from the database is shown as text, never as markup. */
+    const esc = escapeHtml;
+
+    function term(group, code) {
+        return config.terms[group]?.[code] || String(code).replace(/_/g, ' ');
+    }
+
+    // Cloudflare drops a request that is still unanswered after 100s, so give
+    // up just before that and let the guest retry instead of waiting forever.
+    const API_TIMEOUT_MS = 95000;
+
+    async function api(url, body) {
+        const result = await postJson(url, body, { timeoutMs: API_TIMEOUT_MS });
+
+        if (!result.ok) {
+            const error = new Error(result.body.message || `Request failed (${result.status})`);
+            error.status = result.status;
+            throw error;
+        }
+
+        return result.body;
+    }
+
+    function avatarMark() {
+        const el = document.createElement('span');
+        el.className = 'chat-host-avatar';
+        el.setAttribute('aria-hidden', 'true');
+        return el;
+    }
+
+    function bubble(role, text) {
+        const wrap = document.createElement('div');
+        wrap.className =
+            role === 'guest' ? 'flex justify-end' : 'flex items-end justify-start gap-2';
+
+        if (role !== 'guest') {
+            wrap.appendChild(avatarMark());
+        }
+
+        const inner = document.createElement('div');
+        if (role === 'guest') {
+            inner.className = 'max-w-[85%] rounded-2xl rounded-br-sm bg-stone-900 px-3 py-2 text-sm text-white';
+            inner.textContent = text;
+        } else {
+            inner.className = 'chat-prose max-w-[85%] rounded-2xl rounded-bl-sm bg-stone-100 px-3 py-2 text-sm text-stone-900';
+            inner.innerHTML = renderChatText(text);
+        }
+
+        wrap.appendChild(inner);
+        return wrap;
+    }
+
+    function card(children) {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex justify-start';
+        const inner = document.createElement('div');
+        inner.className = 'w-full max-w-[92%] space-y-2';
+        children.forEach((c) => inner.appendChild(c));
+        wrap.appendChild(inner);
+        return wrap;
+    }
+
+    function pill(text, tone = '') {
+        const tones = {
+            '': 'border-stone-200 bg-stone-50 text-stone-600',
+            alert: 'border-rose-200 bg-rose-50 text-rose-800',
+            accent: 'border-amber-300 bg-amber-50 text-amber-900',
+        };
+        return `<span class="rounded-full border px-2 py-0.5 text-[11px] ${tones[tone]}">${esc(text)}</span>`;
+    }
+
+    function programResultCard(item) {
+        const el = document.createElement('div');
+        el.className = 'overflow-hidden rounded-xl border border-stone-200 bg-white';
+        const tags = (item.tags || []).filter((tag) => config.terms.tag?.[tag]).slice(0, 3)
+            .map((tag) => pill(term('tag', tag), ['signature', 'bestseller'].includes(tag) ? 'accent' : '')).join('');
+        el.innerHTML = `
+            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="${esc(item.name)}" class="aspect-[16/9] w-full object-cover">` : ''}
+            <div class="p-3">
+                <div class="flex items-start justify-between gap-2">
+                    <p class="font-medium text-stone-900">${esc(item.name)}</p>
+                    ${item.is_sold_out ? pill(config.labels.soldOut, 'alert') : ''}
+                </div>
+                <p class="mt-1 text-sm font-semibold text-stone-900">${money(item.price)}</p>
+                ${tags ? `<div class="mt-2 flex flex-wrap gap-1">${tags}</div>` : ''}
+                <button type="button" class="mt-2 w-full rounded-lg border border-stone-300 px-2 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50" data-detail-slug="${esc(item.fitness_program_slug)}">
+                    ${esc(config.labels.viewDetails)}
+                </button>
+            </div>
+        `;
+        el.querySelector('[data-detail-slug]').addEventListener('click', () => {
+            sendMessage(config.labels.itemDetailsQuestion.replace(':item', item.name));
+        });
+        return el;
+    }
+
+    function programDetailCard(item) {
+        const el = document.createElement('div');
+        el.className = 'overflow-hidden rounded-xl border border-stone-200 bg-white';
+        const tags = (item.tags || []).filter((tag) => config.terms.tag?.[tag]).map((tag) => pill(term('tag', tag))).join('');
+        const requirements = (item.requirements || []).map((code) => pill(term('requirement', code), 'alert')).join('');
+
+        el.innerHTML = `
+            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="${esc(item.name)}" class="aspect-[16/9] w-full object-cover">` : ''}
+            <div class="p-3">
+                <div class="flex items-start justify-between gap-2">
+                    <p class="font-medium text-stone-900">${esc(item.name)}</p>
+                    ${item.is_sold_out ? pill(config.labels.soldOut, 'alert') : ''}
+                </div>
+                <p class="mt-1 text-xs leading-relaxed text-stone-500">${esc(item.description || '')}</p>
+                <p class="mt-2 text-base font-semibold text-stone-900">${money(item.price)}${item.difficulty ? ` <span class="text-xs font-normal text-stone-500">· ${esc(term('difficulty', item.difficulty))}</span>` : ''}</p>
+                ${tags ? `<div class="mt-2 flex flex-wrap gap-1">${tags}</div>` : ''}
+                ${requirements ? `<div class="mt-2 flex flex-wrap gap-1">${requirements}</div>` : ''}
+            </div>
+        `;
+        return el;
+    }
+
+    function feeText(feeValue) {
+        return Number(feeValue) > 0 ? `${config.labels.fee}: ${money(feeValue)}` : config.labels.feeFree;
+    }
+
+    function trainingResultCard(area, payload) {
+        const el = document.createElement('div');
+        el.className = 'overflow-hidden rounded-xl border border-stone-200 bg-white';
+        const capacity = `${area.min_participants > 1 ? `${area.min_participants}–` : ''}${area.max_participants} ${config.labels.participants}`;
+        el.innerHTML = `
+            ${area.thumbnail_url ? `<img src="${esc(area.thumbnail_url)}" alt="${esc(area.name)}" class="aspect-[16/9] w-full object-cover">` : ''}
+            <div class="p-3">
+                <p class="font-medium text-stone-900">${esc(area.name)}</p>
+                <p class="mt-0.5 text-xs text-stone-500">${esc(term('area_type', area.area_type))} · ${esc(capacity)}</p>
+                <p class="mt-1 text-xs text-stone-500">${esc(feeText(area.session_price))}</p>
+                <p class="mt-2 text-[11px] font-semibold uppercase tracking-wide text-stone-400">${esc(config.labels.availableSlots)} · ${esc(formatDate(payload.date))}</p>
+                <div class="mt-1 flex flex-wrap gap-1.5" data-slots></div>
+            </div>
+        `;
+        const slots = el.querySelector('[data-slots]');
+        area.available_slots.forEach((slot) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'rounded-full border border-stone-300 px-2.5 py-1 text-xs font-medium tabular-nums text-stone-700 hover:bg-amber-50';
+            button.textContent = slot.time_range;
+            button.addEventListener('click', () => {
+                sendMessage(config.labels.reserveSlotQuestion
+                    .replace(':area', area.name)
+                    .replace(':date', formatDate(payload.date))
+                    .replace(':time', slot.time_range)
+                    .replace(':participants', payload.participants));
+            });
+            slots.appendChild(button);
+        });
+        return el;
+    }
+
+    function availabilityCard(payload) {
+        const el = document.createElement('div');
+        el.className = 'rounded-xl border border-stone-200 bg-white p-3';
+
+        if (!payload.available) {
+            el.innerHTML = `<p class="text-sm text-stone-600">${esc(config.labels.noAvailability)}</p>`;
+            return el;
+        }
+
+        const q = payload.quote;
+        el.innerHTML = `
+            <p class="font-medium text-stone-900">${esc(q.name)}</p>
+            <p class="text-xs text-stone-500">${esc(formatDate(q.date))} · ${esc(q.time_range)}</p>
+            <p class="mt-1 text-sm font-semibold text-stone-900">${esc(feeText(q.session_price))}</p>
+            <button type="button" class="mt-2 w-full rounded-lg bg-stone-900 px-2 py-1.5 text-xs font-medium text-white" data-reserve-slot>
+                ${esc(config.labels.reserveTable)}
+            </button>
+        `;
+        el.querySelector('[data-reserve-slot]').addEventListener('click', () => {
+            sendMessage(config.labels.reserveThisSlotQuestion
+                .replace(':area', q.name)
+                .replace(':date', formatDate(q.date))
+                .replace(':time', q.time_range));
+        });
+        return el;
+    }
+
+    function reservationConfirmationCard(payload) {
+        const r = payload.reservation;
+        const el = document.createElement('div');
+        el.className = 'rounded-xl border border-emerald-200 bg-emerald-50 p-3';
+        el.innerHTML = `
+            <p class="text-sm font-semibold text-emerald-900">${esc(config.labels.reservationReceived)}</p>
+            <p class="mt-1 text-xs text-emerald-800">${esc(config.labels.reference)}: ${esc(r.reservation_reference)} · ${esc(r.name)}</p>
+            <p class="text-xs text-emerald-800">${esc(formatDate(r.date))} · ${esc(r.time_range)} · ${esc(r.participants)} ${esc(config.labels.participants)}</p>
+            <p class="mt-1 text-sm font-semibold text-emerald-900">${esc(feeText(r.price_total))}</p>
+            <p class="mt-1 text-xs text-emerald-800">${esc(config.labels.reservationPending)}</p>
+        `;
+
+        const links = [
+            ['whatsapp_url', config.labels.sendWhatsapp],
+            ['phone_url', config.labels.callGym],
+            ['email_url', config.labels.emailGym],
+        ].filter(([key]) => payload.handover?.[key]);
+
+        if (links.length) {
+            const row = document.createElement('div');
+            row.className = 'mt-2 flex flex-wrap gap-1.5';
+            links.forEach(([key, label]) => {
+                const link = document.createElement('a');
+                link.href = payload.handover[key];
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.className = 'rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100';
+                link.textContent = label;
+                row.appendChild(link);
+            });
+            el.appendChild(row);
+        }
+
+        return el;
+    }
+
+    function handoverCard() {
+        const el = document.createElement('div');
+        el.className = 'rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800';
+        el.textContent = config.labels.handedOver;
+        return el;
+    }
+
+    function renderUiPayload(uiPayload) {
+        if (!uiPayload || !uiPayload.length) return;
+
+        uiPayload.forEach((payload) => {
+            if (payload.type === 'program_results') {
+                messagesEl.appendChild(card(payload.items.map(programResultCard)));
+            } else if (payload.type === 'program_detail') {
+                messagesEl.appendChild(card([programDetailCard(payload.item)]));
+            } else if (payload.type === 'training_results') {
+                messagesEl.appendChild(card(payload.areas.map((area) => trainingResultCard(area, payload))));
+            } else if (payload.type === 'availability') {
+                messagesEl.appendChild(card([availabilityCard(payload)]));
+            } else if (payload.type === 'reservation_confirmation') {
+                messagesEl.appendChild(card([reservationConfirmationCard(payload)]));
+            } else if (payload.type === 'handover') {
+                messagesEl.appendChild(card([handoverCard()]));
+            }
+        });
+    }
+
+    function scrollToBottom() {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function setBusy(value) {
+        busy = value;
+        const disabled = busy || !ready || handedOver;
+        inputEl.disabled = disabled;
+        submitEl.disabled = disabled;
+        if (launcher) launcher.disabled = busy || !ready;
+        if (newChatButton) newChatButton.disabled = busy || !ready;
+        if (micButton) micButton.disabled = disabled;
+        root.setAttribute('aria-busy', String(busy));
+        document.body.classList.toggle('is-thinking', busy);
+        if (thinkingIndicator) {
+            thinkingIndicator.hidden = !busy;
+        }
+        document.querySelectorAll('[data-hero-quick-message], [data-ask-ai-button], [data-quick-message]')
+            .forEach((button) => { button.disabled = disabled; });
+        submitEl.textContent = busy ? config.labels.thinking : config.labels.send;
+        if (busy) scrollToBottom();
+    }
+
+    function showHandedOverBanner() {
+        handedOver = true;
+        statusBanner.textContent = config.labels.handedOver;
+        statusBanner.classList.remove('hidden');
+        setChatStatus(config.labels.statusWaiting, 'waiting');
+        setBusy(busy);
+        startPolling();
+    }
+
+    function clearHandedOverBanner() {
+        handedOver = false;
+        statusBanner.classList.add('hidden');
+        setBusy(busy);
+        stopPolling();
+    }
+
+    function startPolling() {
+        if (pollTimer) return;
+        pollTimer = setInterval(pollForStaffReplies, 4000);
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    async function pollForStaffReplies() {
+        const guestToken = localStorage.getItem(config.storageKey);
+        if (!guestToken) return;
+
+        try {
+            const response = await getJson(config.historyUrl, { guest_token: guestToken });
+            if (!response.ok) return;
+
+            const data = response.body;
+
+            if (data.messages.length > knownMessageCount) {
+                const newMessages = data.messages.slice(knownMessageCount);
+                newMessages.forEach(renderMessage);
+                if (newMessages.some((message) => message.role === 'staff')) {
+                    setChatStatus(config.labels.statusReplied, 'replied');
+                }
+                window.gymSound?.play('incoming');
+                knownMessageCount = data.messages.length;
+                scrollToBottom();
+            }
+
+            if (data.status !== 'handed_over') {
+                clearHandedOverBanner();
+            }
+        } catch {
+            // transient network hiccup — try again on the next tick
+        }
+    }
+
+    function renderMessage(message) {
+        if (message.role === 'guest') {
+            messagesEl.appendChild(bubble('guest', message.content));
+        } else if (message.role === 'assistant') {
+            if (message.content) {
+                messagesEl.appendChild(bubble('assistant', message.content));
+            }
+            renderUiPayload(message.ui_payload);
+            const chips = actionChips(message.suggested_actions);
+            if (chips) messagesEl.appendChild(chips);
+        } else if (message.role === 'staff') {
+            messagesEl.appendChild(card([staffBubble(message.content)]));
+            setChatStatus(config.labels.statusReplied, 'replied');
+        } else if (message.role === 'system') {
+            messagesEl.appendChild(bubble('assistant', message.content));
+        }
+    }
+
+    function quickProgramCard() {
+        const template = document.querySelector('[data-quick-program-items]');
+        if (!template) return null;
+
+        const el = document.createElement('div');
+        el.className = 'overflow-hidden rounded-xl border border-stone-200 bg-white';
+
+        const heading = document.createElement('p');
+        heading.className = 'border-b border-stone-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-stone-400';
+        heading.textContent = config.labels.programHeading;
+        el.appendChild(heading);
+
+        const list = document.createElement('div');
+        list.className = 'divide-y divide-stone-100';
+
+        template.content.querySelectorAll('[data-quick-message]').forEach((source) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-amber-50';
+            item.innerHTML = `<span>${esc(source.textContent)}</span><span class="text-stone-300">›</span>`;
+            item.addEventListener('click', () => sendMessage(source.dataset.quickMessage));
+            list.appendChild(item);
+        });
+
+        el.appendChild(list);
+        return el;
+    }
+
+    function staffBubble(text) {
+        const el = document.createElement('div');
+        el.className = 'rounded-2xl rounded-bl-sm border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900';
+        el.innerHTML = `<p class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-500">${esc(config.labels.staff)}</p>${esc(text)}`;
+        return el;
+    }
+
+    const sceneNames = {
+        home: 'home', info: 'home', program: 'program', 'program-item': 'fitness_program', training: 'training', 'training-area': 'training_area',
+        facilities: 'facilities', facility: 'facility_detail', reservation: 'reservation', staff: 'handover',
+    };
+
+    /**
+     * Where the guest is in the gym, so the concierge can answer for "this
+     * dish" or the reservation on screen. Never includes name or contact data.
+     */
+    function uiContext() {
+        const pageScene = document.querySelector('[data-stage]')?.dataset.scene || 'home';
+        const context = { scene: sceneNames[pageScene] || 'home' };
+
+        const lastSegment = decodeURIComponent(window.location.pathname.split('/').pop());
+        if (pageScene === 'program-item') context.selected_fitness_program = lastSegment;
+        if (pageScene === 'training-area') context.selected_training_area = lastSegment;
+        if (pageScene === 'facility') context.selected_facility = Number(lastSegment);
+
+        if (pageScene === 'reservation') {
+            try {
+                const draft = JSON.parse(sessionStorage.getItem(`reservation_draft_${root.dataset.gymSlug}`) || 'null');
+                const { reservation_date, time_slot, participants, occasion, training_area_slug } = draft?.values || {};
+                context.reservation = { reservation_date, time_slot, participants, occasion, training_area_slug };
+                if (training_area_slug) context.selected_training_area = training_area_slug;
+            } catch { /* no draft to share */ }
+        }
+
+        return context;
+    }
+
+    function actionChips(actions) {
+        if (!actions || !actions.length) return null;
+
+        const itemUrl = (slug) => config.itemUrlTemplate.replace('__SLUG__', encodeURIComponent(slug));
+        const targets = {
+            view_item: [config.labels.viewDetails, (action) => itemUrl(action.item)],
+            staff: [config.labels.staff, () => config.staffUrl],
+        };
+        const chipClass = 'rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'flex flex-wrap gap-2 pl-10';
+
+        actions.forEach((action) => {
+            // Booking happens in the conversation itself, so it asks the
+            // concierge instead of walking to the reservation page.
+            if (action.action === 'reserve') {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = chipClass;
+                button.textContent = config.labels.reserveTable;
+                button.addEventListener('click', () => sendMessage(config.labels.reserveStartQuestion));
+                wrap.appendChild(button);
+                return;
+            }
+
+            const target = targets[action.action];
+            if (!target) return;
+            const link = document.createElement('a');
+            link.href = target[1](action);
+            link.className = chipClass;
+            link.textContent = target[0];
+            link.addEventListener('click', (event) => {
+                closePanel({ confirmDraft: false, restoreFocus: false });
+
+                // Another page: walk there the way the program does. A panel on
+                // this page is just a hash change, so leave it to the browser.
+                if (link.pathname !== window.location.pathname && window.gymStage) {
+                    event.preventDefault();
+                    window.gymStage.leave(link.href);
+                }
+            });
+            wrap.appendChild(link);
+        });
+
+        return wrap.childElementCount ? wrap : null;
+    }
+
+    function errorCard(text, err) {
+        const el = document.createElement('div');
+        el.className = 'rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900';
+
+        const message = document.createElement('p');
+        message.textContent = err.status === 429 ? config.labels.slow : config.labels.error;
+
+        const actions = document.createElement('div');
+        actions.className = 'mt-3 flex flex-wrap gap-2';
+
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'rounded-full bg-stone-900 px-3 py-1.5 text-xs font-medium text-white';
+        retry.textContent = config.labels.retry;
+        retry.addEventListener('click', () => {
+            el.remove();
+            sendMessage(text, { retry: true });
+        });
+
+        const staff = document.createElement('a');
+        staff.href = config.staffUrl;
+        staff.className = 'rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-900';
+        staff.textContent = config.labels.staff;
+        staff.addEventListener('click', (event) => {
+            closePanel({ confirmDraft: false, restoreFocus: false });
+
+            if (window.gymStage) {
+                event.preventDefault();
+                window.gymStage.leave(staff.href);
+            }
+        });
+
+        actions.append(retry, staff);
+        el.append(message, actions);
+        return el;
+    }
+
+    async function sendMessage(text, { retry = false } = {}) {
+        if (!text.trim() || handedOver || busy || !ready) return;
+
+        const guestToken = localStorage.getItem(config.storageKey);
+        if (!guestToken) return;
+
+        openPanel();
+        speaker.stop();
+        if (!retry) messagesEl.appendChild(bubble('guest', text));
+        window.gymSound?.play('sent');
+        scrollToBottom();
+        setBusy(true);
+
+        try {
+            const data = await api(config.messageUrl, { guest_token: guestToken, message: text, ...uiContext() });
+            renderMessage(data.message);
+            setChatStatus(config.labels.statusSent, 'sent');
+            window.gymSound?.play('incoming');
+            speakReply(data.message);
+            knownMessageCount += 2; // the guest message just sent + the reply just rendered
+            if (data.status === 'handed_over') {
+                showHandedOverBanner();
+            }
+        } catch (err) {
+            messagesEl.appendChild(errorCard(text, err));
+        } finally {
+            setBusy(false);
+            scrollToBottom();
+        }
+    }
+
+    async function boot() {
+        let guestToken = localStorage.getItem(config.storageKey);
+
+        if (!guestToken) {
+            const data = await api(config.startUrl, { locale: config.locale });
+            guestToken = data.guest_token;
+            localStorage.setItem(config.storageKey, guestToken);
+            messagesEl.appendChild(bubble('assistant', config.labels.intro));
+            const program = quickProgramCard();
+            if (program) messagesEl.appendChild(card([program]));
+            return;
+        }
+
+        try {
+            const response = await getJson(config.historyUrl, { guest_token: guestToken });
+
+            if (!response.ok) throw new Error('history_unavailable');
+
+            const data = response.body;
+
+            if (!data.messages.length) {
+                messagesEl.appendChild(bubble('assistant', config.labels.intro));
+                const program = quickProgramCard();
+                if (program) messagesEl.appendChild(card([program]));
+            } else {
+                data.messages.forEach(renderMessage);
+            }
+            knownMessageCount = data.messages.length;
+
+            if (data.status === 'handed_over') {
+                showHandedOverBanner();
+            }
+            if (data.messages.some((message) => message.role === 'staff')) {
+                setChatStatus(config.labels.statusReplied, 'replied');
+            }
+        } catch {
+            localStorage.removeItem(config.storageKey);
+            return boot();
+        }
+
+        scrollToBottom();
+    }
+
+    function showConnectionError() {
+        statusBanner.textContent = root.dataset.labelConnectionError;
+        statusBanner.classList.remove('hidden');
+        messagesEl.appendChild(bubble('assistant', config.labels.intro));
+    }
+
+    /** Wipes this browser's conversation and starts a fresh one with a new guest token. */
+    async function startNewChat() {
+        if (!ready || busy) return;
+
+        ready = false;
+        speaker.stop();
+        stopListening({ send: false });
+        stopPolling();
+        localStorage.removeItem(config.storageKey);
+        messagesEl.replaceChildren();
+        handedOver = false;
+        knownMessageCount = 0;
+        statusBanner.classList.add('hidden');
+        setChatStatus('');
+        inputEl.value = '';
+        setBusy(true);
+
+        try {
+            await boot();
+            ready = true;
+        } catch {
+            showConnectionError();
+        } finally {
+            setBusy(false);
+            scrollToBottom();
+            if (ready) inputEl.focus();
+        }
+    }
+
+    newChatButton?.addEventListener('click', startNewChat);
+
+    /** Widens the panel on desktop; remembered across pages, ignored where storage is blocked. */
+    const expandedKey = 'concierge_chat_expanded';
+
+    function setExpanded(expanded, { remember = true } = {}) {
+        root.classList.toggle('is-expanded', expanded);
+        const label = expanded ? config.labels.chatCollapse : config.labels.chatExpand;
+        expandButton?.setAttribute('aria-pressed', String(expanded));
+        expandButton?.setAttribute('aria-label', label);
+        expandButton?.setAttribute('title', label);
+
+        if (!remember) return;
+
+        try {
+            localStorage.setItem(expandedKey, expanded ? '1' : '0');
+        } catch { /* the preference just is not remembered */ }
+    }
+
+    expandButton?.addEventListener('click', () => {
+        setExpanded(!root.classList.contains('is-expanded'));
+        scrollToBottom();
+    });
+
+    try {
+        if (localStorage.getItem(expandedKey) === '1') setExpanded(true, { remember: false });
+    } catch { /* storage blocked */ }
+
+    /**
+     * Voice input through the browser's speech recognition (no server round
+     * trip for audio). The spoken question fills the input as it is heard and
+     * is sent as soon as the guest stops talking.
+     */
+    const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const speechLocales = { ja: 'ja-JP', en: 'en-US', id: 'id-ID' };
+
+    function setListening(listening) {
+        if (!micButton) return;
+
+        const label = listening ? config.labels.voiceStop : config.labels.voiceStart;
+        micButton.classList.toggle('is-listening', listening);
+        micButton.setAttribute('aria-pressed', String(listening));
+        micButton.setAttribute('aria-label', label);
+        micButton.title = label;
+        inputEl.placeholder = listening ? config.labels.voiceListening : config.labels.placeholder;
+    }
+
+    /** Stops listening; with `send: false` whatever was heard so far is thrown away. */
+    function stopListening({ send = true } = {}) {
+        if (!recognition) return;
+
+        if (send) {
+            recognition.stop();
+            return;
+        }
+
+        recognition.discarded = true;
+        recognition.abort();
+    }
+
+    function startListening() {
+        if (!SpeechRecognitionApi || recognition || !ready || busy || handedOver) return;
+
+        speaker.stop();
+        const session = new SpeechRecognitionApi();
+        let transcript = '';
+        let failed = false;
+
+        session.lang = speechLocales[config.locale] || speechLocales.id;
+        session.interimResults = true;
+        session.continuous = false;
+
+        session.addEventListener('result', (event) => {
+            transcript = Array.from(event.results).map((result) => result[0].transcript).join('').trim();
+            inputEl.value = transcript;
+        });
+
+        session.addEventListener('error', (event) => {
+            failed = true;
+            if (event.error !== 'not-allowed' && event.error !== 'service-not-allowed') return;
+
+            setChatStatus(config.labels.voiceDenied, 'error');
+            window.setTimeout(() => {
+                if (chatStatus.textContent === config.labels.voiceDenied) setChatStatus('');
+            }, 6000);
+        });
+
+        session.addEventListener('end', () => {
+            if (recognition === session) {
+                recognition = null;
+                setListening(false);
+            }
+
+            if (session.discarded) {
+                if (transcript) inputEl.value = '';
+                return;
+            }
+
+            if (failed || !transcript || busy || handedOver) return;
+
+            inputEl.value = '';
+            sendMessage(transcript);
+        });
+
+        recognition = session;
+        setListening(true);
+
+        try {
+            session.start();
+        } catch {
+            recognition = null;
+            setListening(false);
+        }
+    }
+
+    if (micButton && SpeechRecognitionApi) {
+        micButton.hidden = false;
+        micButton.addEventListener('click', () => (recognition ? stopListening() : startListening()));
+    }
+
+    formEl.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!ready || busy || handedOver || !inputEl.value.trim()) return;
+        const text = inputEl.value;
+        inputEl.value = '';
+        sendMessage(text);
+    });
+
+    // Quick-start buttons on a scene — the same topics as the in-chat program,
+    // always visible up front so participants see what the AI can do immediately.
+    document.querySelectorAll('[data-hero-quick-message]').forEach((button) => {
+        button.addEventListener('click', () => {
+            openPanel();
+            sendMessage(button.dataset.heroQuickMessage);
+        });
+    });
+
+    // A program pick in the same scene: the concierge answers right where the guest stands.
+    window.addEventListener('concierge:ask', (event) => sendMessage(event.detail.message));
+
+    setBusy(true);
+    boot().then(() => {
+        ready = true;
+        scrollToBottom();
+    }).catch(showConnectionError).finally(() => {
+        setBusy(false);
+
+        // The guest chose this topic from the program on the previous scene:
+        // let the new scene settle for a beat, then carry on the conversation.
+        const topic = window.takePendingConciergeTopic?.();
+        if (topic && ready) window.setTimeout(() => sendMessage(topic), 650);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initConcierge);
+
+function initDetailGallery() {
+    document.querySelectorAll('[data-detail-gallery]').forEach((gallery) => {
+        const main = gallery.querySelector('[data-detail-gallery-main]');
+        const thumbs = [...gallery.querySelectorAll('[data-detail-thumb]')];
+        if (!main) return;
+
+        thumbs.forEach((thumb) => {
+            thumb.addEventListener('click', () => {
+                main.src = thumb.dataset.src;
+                main.alt = thumb.dataset.alt || '';
+                thumbs.forEach((other) => other.toggleAttribute('aria-current', other === thumb));
+            });
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initDetailGallery);

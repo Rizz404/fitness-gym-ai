@@ -1,0 +1,16 @@
+.stage-image { position:absolute; z-index:-3; inset:0; width:100%; height:100%; object-fit:cover; object-position:var(--stage-focus,center); transition:transform .6s,filter .6s; }
+.stage-shade { position:absolute; z-index:-2; inset:0; background:linear-gradient(90deg,var(--paper-deep),transparent 72%),linear-gradient(0deg,var(--paper-deep),transparent 32%); opacity:.84; }
+.stage-character { position:absolute; z-index:1; right:7%; bottom:0; height:82%; width:auto; max-width:44%; object-fit:contain; object-position:bottom; pointer-events:none; animation:character-arrive .5s ease backwards; }
+.stage:not([data-scene="home"]):not([data-scene="opening"]) .stage-character { right:-2%; max-width:24%; height:62%; }
+.stage-tour { position:absolute; z-index:26; left:0; right:0; bottom:130px; margin-inline:auto; max-width:calc(100% - 32px); width:fit-content; padding:18px 28px; border:1px solid var(--line); border-radius:12px; background:var(--paper); color:var(--ink); font:italic 22px var(--font-display); opacity:0; pointer-events:none; }
+.stage-tour:empty { display:none; }.stage-tour.is-visible { opacity:1; }
+.stage-loader { position:absolute; z-index:50; inset:0; display:flex; flex-direction:column; gap:20px; align-items:center; justify-content:center; background:var(--paper-deep); pointer-events:none; opacity:0; animation:loader-out .4s 2s forwards; }
+.stage-loader.is-ready { opacity:0; visibility:hidden; animation:none; }
+.stage.is-leaving .stage-image { transform:scale(1.03); filter:brightness(.7); }
+.stage.is-leaving > :not(.stage-image,.stage-shade,.stage-loader,.stage-tour) { opacity:0; transition:opacity .22s; }
+.stage-edition { position:absolute; left:32px; bottom:30px; display:flex; align-items:center; gap:10px; font-size:9px; letter-spacing:.1em; color:var(--ink-soft); }
+.stage-edition i { width:3px; height:3px; border-radius:50%; background:var(--terra); }
+@keyframes character-arrive { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+@keyframes loader-out { to { opacity:0; visibility:hidden; } }
+@keyframes stage-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@media(prefers-reduced-motion:reduce) { .stage *, .stage *::before,.stage *::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
