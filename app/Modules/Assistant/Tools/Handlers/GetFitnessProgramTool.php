@@ -44,7 +44,7 @@ final class GetFitnessProgramTool implements Tool
             ...CatalogSummaries::fitnessProgram($item, $context->gym, $context->locale),
             'description' => $item->translatedDescription($context->locale),
             'duration_minutes' => $item->duration_minutes,
-            'note' => 'price is the current program price; requirements are guidance only and the kitchen must confirm for participants with a serious allergy.',
+            'note' => 'Price and description come from the current gym catalog. Preparation requirements are not medical clearance; discuss individual needs with a trainer.',
         ];
 
         return ToolResult::json($detail, ['type' => 'program_detail', 'item' => $detail]);

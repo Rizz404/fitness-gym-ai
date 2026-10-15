@@ -110,13 +110,15 @@ class ConciergeReservationToolTest extends TestCase
     public function test_program_search_filters_by_diet_and_budget_and_hides_unpublished_items(): void
     {
         $gym = Gym::create(['name' => 'Demo', 'slug' => 'demo', 'public_status' => 'published', 'currency' => 'IDR']);
-        $gym->fitnessPrograms()->create(['name' => 'Aglio Olio', 'slug' => 'aglio-olio', 'category' => 'personal_training', 'price' => 48000, 'tags' => ['beginner'], 'is_active' => true]);
+        $gym->fitnessPrograms()->create(['description' => 'Guided beginner training.', 'duration_minutes' => 60, 'name' => 'Aglio Olio', 'slug' => 'aglio-olio', 'category' => 'personal_training', 'price' => 48000, 'tags' => ['beginner'], 'is_active' => true]);
         $gym->fitnessPrograms()->create(['name' => 'Club Sandwich', 'slug' => 'club-sandwich', 'category' => 'personal_training', 'price' => 52000, 'tags' => ['intermediate'], 'is_active' => true]);
         $gym->fitnessPrograms()->create(['name' => 'Secret Dish', 'slug' => 'secret', 'category' => 'personal_training', 'price' => 10000, 'tags' => ['beginner'], 'is_active' => false]);
         $conversation = Conversation::create(['gym_id' => $gym->id, 'guest_token' => (string) Str::uuid(), 'locale' => 'en']);
 
         $vegan = $this->runTool($gym, $conversation, 'search_program', ['level' => 'beginner']);
         $this->assertSame(['aglio-olio'], collect($vegan['ui']['items'])->pluck('fitness_program_slug')->all());
+        $this->assertSame('Guided beginner training.', $vegan['ui']['items'][0]['description']);
+        $this->assertSame(60, $vegan['ui']['items'][0]['duration_minutes']);
 
         $cheap = $this->runTool($gym, $conversation, 'search_program', ['category' => 'personal_training', 'max_price' => 50000]);
         $this->assertSame(['aglio-olio'], collect($cheap['ui']['items'])->pluck('fitness_program_slug')->all());
