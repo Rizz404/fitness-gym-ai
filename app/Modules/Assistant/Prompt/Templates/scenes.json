@@ -1,0 +1,28 @@
+{
+    "labels": {
+        "title": "CURRENT UI CONTEXT",
+        "scene": "Current scene: {scene}",
+        "fitness_program": "Selected program item: {value}",
+        "training_area": "Selected training area: {value}",
+        "facility": "Selected facility: {value}",
+        "reservation_draft": "Reservation draft on screen: {value}",
+        "guidance": "Scene guidance: {value}",
+        "none": "none"
+    },
+    "guidance": {
+        "home": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "program": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "program-item": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "training": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "training-area": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "facilities": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "facility": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "info": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "reservation": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "staff": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "fitness_program": "Treat \"this\" or \"it\" as that item, using the selected fitness program slug. Read its price, level and preparation through get_fitness_program; never guess. Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "training_area": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "facility_detail": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request.",
+        "handover": "Help with the gym content on this screen. Use search_program/get_fitness_program for program facts, search_training/check_session_availability for sessions, and search_knowledge for facilities and membership. Booking requires one participant and explicit confirmation before create_reservation_request."
+    }
+}
