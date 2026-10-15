@@ -543,7 +543,7 @@ a.info-fact:hover {
 #info-tab-faq:checked ~ .info-tablist label[for="info-tab-faq"] {
     background: var(--paper);
     color: var(--ink);
-    box-shadow: 0 1px 3px rgb(58 36 24 / .16);
+    box-shadow: var(--shadow-soft);
 }
 
 #info-tab-general:focus-visible ~ .info-tablist label[for="info-tab-general"],

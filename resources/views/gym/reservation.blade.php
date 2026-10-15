@@ -64,13 +64,14 @@
                         <div class="wizard-seats">
                             @foreach ($trainingAreas as $area)
                                 <label class="wizard-seat" data-area-option
-                                    data-name="{{ $area->translatedName($locale) }}"
+                                    data-name="{{ $area->fitnessProgram->translatedName($locale) }} · {{ $area->translatedName($locale) }}"
                                     data-min-participants="{{ $area->min_participants }}"
                                     data-max-participants="{{ $area->max_participants }}"
                                 >
                                     <input type="radio" name="training_area_slug" value="{{ $area->slug }}">
                                     <span class="wizard-seat-body">
-                                        <strong>{{ $area->translatedName($locale) }}</strong>
+                                        <strong>{{ $area->fitnessProgram->translatedName($locale) }}</strong>
+                                        <span>{{ $area->translatedName($locale) }}</span>
                                         <span>{{ $terms['area_type'][$area->area_type] ?? Str::headline($area->area_type) }}</span>
                                         <span>{{ $area->min_participants > 1 ? str_replace([':min', ':max'], [(string) $area->min_participants, (string) $area->max_participants], $wizard['fits']) : str_replace(':max', (string) $area->max_participants, $wizard['fits_one']) }}</span>
                                         <span class="wizard-seat-price">@if ((float) $area->session_price > 0){{ $wizard['fee_label'] }}: {{ $gym->currency }} {{ number_format((float) $area->session_price, 0, ',', '.') }}@else{{ $wizard['fee_label'] }}: {{ $wizard['fee_free'] }}@endif</span>

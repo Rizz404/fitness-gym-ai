@@ -3,7 +3,7 @@
     $primaryImage = $trainingArea->images->first();
     $areaUrl = fn ($area) => route('gym.training-area', ['gymSlug' => $gym->slug, 'areaSlug' => $area->slug, 'lang' => $locale]);
     $source = fn ($image) => $image->image_source;
-    $capacity = ($trainingArea->min_participants > 1 ? $trainingArea->min_participants.'–' : '').$trainingArea->max_participants.' '.$stageCopy['participants_unit'];
+    $capacity = $trainingArea->session_capacity.' '.$stageCopy['participants_unit'];
 @endphp
 <section class="stage-content @container" aria-label="{{ $areaName }}">
     <a href="{{ route('gym.training', ['gymSlug' => $gym->slug, 'lang' => $locale]) }}" data-stage-exit class="panel-close" aria-label="{{ $labels['training_heading'] }}"><span aria-hidden="true">×</span></a>

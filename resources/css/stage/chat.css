@@ -304,7 +304,7 @@
     padding: 6px 6px 6px 20px;
     border: 1px solid var(--line-strong);
     border-radius: 999px;
-    background: #fff;
+    background: var(--paper-soft);
     color: var(--ink);
     box-shadow: var(--shadow-soft);
     opacity: 0;
