@@ -72,3 +72,11 @@ Aktifkan scheduler Toolkit untuk `gym:open-inventory`, dijadwalkan harian 01.00 
 ## Aset
 
 `public/images/gym/interior.webp`: interior gym charcoal dengan aksen lime, ilustrasi arsitektur lebar tanpa orang dan teks. `concierge.webp`: karakter concierge berbusana charcoal–lime, tablet, latar transparan. Aset dibuat dengan ImageGen dan disimpan di repository.
+
+## Verifikasi 15 Oktober 2026
+
+Lokal: 116 tes PHP / 514 assertions, 16 tes JavaScript, build, UI lint, Pint, view cache, dan audit Composer serta dependency npm runtime lulus. Scene pembuka, dashboard, program/detail, studio/detail, fasilitas/detail, info, tim, booking, dan chat diperiksa pada desktop 1440×900 dan mobile 390×844; bukan seluruh kombinasi bahasa/perangkat.
+
+Produksi: SSL, halaman publik dan `/up`, migrasi PostgreSQL, autentikasi admin, serta alur booking PT `pending → confirmed → cancelled` dan pengembalian kapasitas terverifikasi. Scheduler Toolkit memiliki satu entri khusus aplikasi. Chat nyata menghasilkan kartu program melalui tool; TTS mengembalikan `audio/wav` dengan header RIFF. Ini belum membuktikan seluruh tool, bahasa, audio di semua browser, atau konkurensi booking PostgreSQL.
+
+PHP Windows pada lingkungan pengembangan ini belum memiliki CA yang dapat memverifikasi endpoint LLM; percobaan chat lokal terkena cURL error 60. Verifikasi TLS tetap aktif. Integrasi nyata diuji dari produksi yang memiliki CA sistem. SMTP aplikasi masih `log`; mailbox yang dibuat tidak otomatis mengaktifkan pengiriman email dari aplikasi.
